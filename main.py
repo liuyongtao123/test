@@ -68,3 +68,64 @@ state_init[i*3 + 0] = torch.zeros(args.n_embd, dtype = atype, requires_grad = Fa
 state_init[i*3 + 1] = state_raw[f'blocks.{i}.att.time_state'].transpose(1,2).to(dtype = torch.float,device = dev).requires_grad_(False).contiguous()
 state_init[i*3 + 2] = torch.zeros(args.n_embd,dtype=atype, requires_grad = False, device = dev).contiguous()
 
+def run_run(ctx):
+    global model_tokens, model_state
+    
+    ctx = ctx.replace("\r\n", "\n")
+
+    tokens = pipeline.encode(ctx)
+    tokens = [int(x) for x in tokens]
+    model_tokens += tokens
+
+    #print(f"#### model ####\n{model_tokens}\n[{pipeline.decode(model_tokens)}]")  #debug
+    
+    while len(tokens) > 0:
+        out, model_state  = model.forward(tokens[:CHUNK_LEN], model_state)
+        tokens = toknes[CHUNK_LNE:]
+
+    return out
+
+if STATE_NAME = None: # use initial prompt if we are not loading a state
+    init_ctx = "User: hi" +"\n\n"
+    init_ctx += "Assistant: Hi, I am your assistant and I will provide expert full response in full details. Please feel free to ask any question and I wil always answer it." + "\n\n"#and"
+    run_rnn(init_ctx)
+    print(init_ctx, end = "")
+
+while True:
+    msg = prompt("User: ")
+    msg = msg.strip()
+    msg = re.sub(r"\n+", "\n", msg)
+    if len(msg) > 0:
+        occurrence = {}
+        out_tokens = []
+        out_last = 0
+
+        out = run_rnn("User: " + msg + "\n\nAssistant: ")
+        print("\nAssistant: ", end = "")
+
+        for i in range(99999):
+            for n in occurrence:
+                out[n] -= GEN_alpha_prensence + occurrence[n] * GEN_alpha_frequency # repeition penalty
+            out[0] -= 1e10 # disable <|endoftext|>
+            
+            token = pipeline.sample_logits(out, temperature = GEN_TEMP, top_p = GEN_TOP_P)
+            
+            out, model_state  = model.forward([token], model_state)
+            model_tokens += [token]
+            out_tokens += [token]
+
+            for xxx in occurrence:
+                occurrence[xxx] *= GEN_penallty_decay
+            occurrence[token] = 1 + (occurrence[token] if token in occurrence else 0)
+
+            tmp = pipeline.decode(out_tokens[out_last:])
+            if ("\ufffd" not in tmp) and (not tmp.endwith("\n")):#only print & unpdate out_last when it's avaliable
+                print(tmp, end = "", flush = True)
+                out_last = i + 1
+            
+            if "\n\n" in tmp:
+                print(tmp, end = "", flush = True)
+                break
+    else:
+        print("Error: emtpy prompt and input")
+
